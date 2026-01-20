@@ -14,8 +14,22 @@ class PropagatorRecorder
 {
     public function record(Request $request): PropagatorRequest
     {
+        $receivedAt = $request->attributes->get('propagator_received_at');
+        if ($receivedAt instanceof Carbon) {
+            $receivedAt = $receivedAt->copy()->setTimezone('UTC');
+        } elseif (is_string($receivedAt) && $receivedAt !== '') {
+            $receivedAt = Carbon::parse($receivedAt, 'UTC');
+        } else {
+            $receivedAt = Carbon::now('UTC');
+        }
+
+        $requestId = (string) $request->attributes->get('propagator_request_id', '');
+        if ($requestId === '') {
+            $requestId = (string) Str::uuid();
+        }
+
         $record = PropagatorRequest::create([
-            'requestId' => (string) Str::uuid(),
+            'requestId' => $requestId,
             'requestMethod' => $request->getMethod(),
             'requestUrl' => $request->fullUrl(),
             'requestHeaders' => $request->headers->all(),
@@ -23,7 +37,7 @@ class PropagatorRecorder
             'requestBody' => $request->getContent(),
             'requestIp' => $request->ip(),
             'requestUserAgent' => $request->headers->get('User-Agent'),
-            'requestReceivedAt' => Carbon::now('UTC'),
+            'requestReceivedAt' => $receivedAt,
         ]);
 
         event(new RequestRecorded($record));

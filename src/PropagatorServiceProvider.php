@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mindgoner\Propagator;
 
 use Illuminate\Support\ServiceProvider;
+use Mindgoner\Propagator\Console\PropagatorListenCommand;
 use Mindgoner\Propagator\Services\PropagatorRecorder;
 
 class PropagatorServiceProvider extends ServiceProvider
@@ -16,6 +17,12 @@ class PropagatorServiceProvider extends ServiceProvider
         $this->app->singleton('propagator', function ($app) {
             return new PropagatorRecorder();
         });
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                PropagatorListenCommand::class,
+            ]);
+        }
     }
 
     public function boot(): void
