@@ -13,7 +13,8 @@ return new class extends Migration
         $tableName = config('propagator.table_prefix', 'propagator_') . 'requests';
 
         Schema::create($tableName, function (Blueprint $table) {
-            $table->id('requestId');
+            $table->id();
+            $table->string('requestId');
             $table->string('requestMethod');
             $table->text('requestUrl');
             $table->json('requestHeaders');
@@ -24,6 +25,7 @@ return new class extends Migration
             $table->timestampTz('requestReceivedAt')->comment('UTC');
             $table->timestamps();
 
+            $table->unique('requestId');
             $table->index('requestReceivedAt');
         });
     }

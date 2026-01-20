@@ -18,12 +18,14 @@ class RequestRecorded implements ShouldBroadcast
     use SerializesModels;
 
     public PropagatorRequest $record;
-    public mixed $receivedAt;
+    public string $receivedAt;
+    private bool $broadcast;
 
-    public function __construct(PropagatorRequest $record)
+    public function __construct(PropagatorRequest $record, bool $broadcast = true)
     {
         $this->record = $record;
-        $this->receivedAt = $record->requestReceivedAt;
+        $this->receivedAt = $record->requestReceivedAt->copy()->setTimezone('UTC')->toIso8601String();
+        $this->broadcast = $broadcast;
     }
 
     public function broadcastOn(): Channel
@@ -38,7 +40,7 @@ class RequestRecorded implements ShouldBroadcast
 
     public function broadcastWhen(): bool
     {
-        return (bool) config('propagator.pusher.enabled', false);
+        return $this->broadcast && (bool) config('propagator.pusher.enabled', false);
     }
 
     public function broadcastWith(): array

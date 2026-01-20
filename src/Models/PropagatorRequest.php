@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mindgoner\Propagator\Models;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 
 class PropagatorRequest extends Model
@@ -19,5 +20,10 @@ class PropagatorRequest extends Model
     public function getTable(): string
     {
         return config('propagator.table_prefix', 'propagator_') . 'requests';
+    }
+
+    protected function serializeDate(DateTimeInterface $date): string
+    {
+        return $date->setTimezone(new \DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
     }
 }

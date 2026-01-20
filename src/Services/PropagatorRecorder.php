@@ -12,6 +12,9 @@ use Mindgoner\Propagator\Models\PropagatorRequest;
 
 class PropagatorRecorder
 {
+    private const ORIGIN_HEADER = 'X-Propagator-Origin';
+    private const ORIGIN_REMOTE = 'remote';
+
     public function record(Request $request): PropagatorRequest
     {
         $receivedAt = $request->attributes->get('propagator_received_at');
@@ -28,7 +31,7 @@ class PropagatorRecorder
             $requestId = (string) Str::uuid();
         }
 
-        $record = PropagatorRequest::create([
+        $payload = [
             'requestId' => $requestId,
             'requestMethod' => $request->getMethod(),
             'requestUrl' => $request->fullUrl(),
@@ -38,10 +41,25 @@ class PropagatorRecorder
             'requestIp' => $request->ip(),
             'requestUserAgent' => $request->headers->get('User-Agent'),
             'requestReceivedAt' => $receivedAt,
-        ]);
+        ];
 
-        event(new RequestRecorded($record));
+        if ($requestId !== '') {
+            $record = PropagatorRequest::updateOrCreate(
+                ['requestId' => $requestId],
+                $payload
+            );
+        } else {
+            $record = PropagatorRequest::create($payload);
+        }
+
+        $shouldBroadcast = ! $this->isRemoteRequest($request);
+        event(new RequestRecorded($record, $shouldBroadcast));
 
         return $record;
+    }
+
+    private function isRemoteRequest(Request $request): bool
+    {
+        return $request->headers->get(self::ORIGIN_HEADER) === self::ORIGIN_REMOTE;
     }
 }

@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Mindgoner\Propagator\Facades\Propagator;
 use Mindgoner\Propagator\Models\PropagatorRequest;
-use WebSocket\Client;
+use Pusher\Pusher;
 
 class PropagatorListenCommand extends Command
 {
@@ -25,11 +25,11 @@ class PropagatorListenCommand extends Command
             return self::FAILURE;
         }
 
-        $since = $this->lastReceivedAt();
+        $since = $this->lastReceivedAt()->subSecond();
         $this->pullSince($remoteUrl, $since);
 
-        if ($this->pusherEnabled() && class_exists(Client::class)) {
-            return $this->listenWithPusher($remoteUrl, $since);
+        if ($this->pusherEnabled() && class_exists(Pusher::class)) {
+            return $this->listenWithPusher($since);
         }
 
         return $this->listenWithPolling($remoteUrl, $since);
@@ -52,81 +52,64 @@ class PropagatorListenCommand extends Command
         return self::SUCCESS;
     }
 
-    private function listenWithPusher(string $remoteUrl, Carbon $since): int
+    private function listenWithPusher(Carbon $since): int
     {
         $this->info('Listening via Pusher.');
 
-        $cluster = (string) config('propagator.pusher.cluster', 'mt1');
-        $key = (string) config('propagator.pusher.key');
-
-        $wsUrl = sprintf(
-            'wss://ws-%s.pusher.com/app/%s?protocol=7&client=propagator&version=1.0&flash=false',
-            $cluster,
-            $key
+        $pusher = new Pusher(
+            (string) config('propagator.pusher.key'),
+            (string) config('propagator.pusher.secret'),
+            (string) config('propagator.pusher.app_id'),
+            [
+                'cluster' => (string) config('propagator.pusher.cluster', 'mt1'),
+                'useTLS' => true,
+            ]
         );
 
-        $client = new Client($wsUrl, ['timeout' => 30]);
+        if (! method_exists($pusher, 'connect')
+            || ! method_exists($pusher, 'subscribe')
+            || ! method_exists($pusher, 'bind')
+            || ! method_exists($pusher, 'loop')
+        ) {
+            $this->warn('Pusher client does not support websocket connections.');
+            return $this->listenWithPolling((string) config('propagator.remote_url'), $since);
+        }
 
-        $connected = false;
-        while (true) {
-            $message = $client->receive();
-            if ($message === null) {
-                continue;
+        $pusher->connect();
+        $pusher->subscribe('propagator.requests');
+
+        $pusher->bind('request.recorded', function ($data) {
+            $payload = is_string($data) ? json_decode($data, true) : $data;
+            if (! is_array($payload)) {
+                return;
             }
 
-            $payload = json_decode($message, true);
-            if (! is_array($payload) || ! isset($payload['event'])) {
-                continue;
-            }
-
-            if ($payload['event'] === 'pusher:connection_established') {
-                $connected = true;
-                $client->send(json_encode([
-                    'event' => 'pusher:subscribe',
-                    'data' => ['channel' => 'propagator.requests'],
-                ]));
-                continue;
-            }
-
-            if (! $connected) {
-                continue;
-            }
-
-            if ($payload['event'] === 'pusher:ping') {
-                $client->send(json_encode(['event' => 'pusher:pong']));
-                continue;
-            }
-
-            if ($payload['event'] !== 'request.recorded') {
-                continue;
-            }
-
-            $data = json_decode((string) ($payload['data'] ?? ''), true);
-            if (! is_array($data)) {
-                continue;
-            }
-
-            $record = $data['record'] ?? null;
+            $record = $payload['record'] ?? null;
             if (! is_array($record)) {
-                continue;
+                return;
             }
 
             $request = $this->buildRequestFromRecord($record);
-            $request->attributes->set('propagator_received_at', $data['received_at'] ?? ($record['requestReceivedAt'] ?? null));
+            $request->attributes->set('propagator_received_at', $payload['received_at'] ?? ($record['requestReceivedAt'] ?? null));
             $request->attributes->set('propagator_request_id', $record['requestId'] ?? null);
 
             Propagator::record($request);
-        }
+            $this->replayToLocal($record);
+        });
+
+        $pusher->loop();
 
         return self::SUCCESS;
     }
 
     private function pullSince(string $remoteUrl, Carbon $since): Carbon
     {
+        $sinceParam = $since->copy()->subSecond()->toIso8601String();
+
         $response = Http::withBasicAuth(
             (string) config('propagator.basic_auth.key'),
             (string) config('propagator.basic_auth.secret')
-        )->get($remoteUrl, ['since' => $since->toIso8601String()]);
+        )->get($remoteUrl, ['since' => $sinceParam]);
 
         if (! $response->ok()) {
             $this->warn('Pull failed with status ' . $response->status());
@@ -145,24 +128,19 @@ class PropagatorListenCommand extends Command
                 continue;
             }
 
-            $recordedAt = $record['requestReceivedAt'] ?? null;
-            if (! is_string($recordedAt) || $recordedAt === '') {
-                continue;
-            }
-
-            $parsedRecordedAt = Carbon::parse($recordedAt, 'UTC');
-            if ($parsedRecordedAt->lessThanOrEqualTo($latest)) {
-                continue;
-            }
-
             $request = $this->buildRequestFromRecord($record);
             $request->attributes->set('propagator_received_at', $record['requestReceivedAt'] ?? null);
             $request->attributes->set('propagator_request_id', $record['requestId'] ?? null);
 
             Propagator::record($request);
+            $this->replayToLocal($record);
 
-            if ($parsedRecordedAt->greaterThan($latest)) {
-                $latest = $parsedRecordedAt;
+            $recordedAt = $record['requestReceivedAt'] ?? null;
+            if (is_string($recordedAt) && $recordedAt !== '') {
+                $parsedRecordedAt = Carbon::parse($recordedAt, 'UTC');
+                if ($parsedRecordedAt->greaterThan($latest)) {
+                    $latest = $parsedRecordedAt;
+                }
             }
         }
 
@@ -195,6 +173,8 @@ class PropagatorListenCommand extends Command
             $request->headers->replace($headers);
         }
 
+        $request->headers->set('X-Propagator-Origin', 'remote');
+
         if (isset($record['requestIp']) && is_string($record['requestIp'])) {
             $request->server->set('REMOTE_ADDR', $record['requestIp']);
         }
@@ -204,6 +184,34 @@ class PropagatorListenCommand extends Command
         }
 
         return $request;
+    }
+
+    private function replayToLocal(array $record): void
+    {
+        $targetUrl = (string) ($record['requestUrl'] ?? '');
+        if ($targetUrl === '') {
+            return;
+        }
+
+        $method = (string) ($record['requestMethod'] ?? 'GET');
+        $headers = $record['requestHeaders'] ?? [];
+        if (! is_array($headers)) {
+            $headers = [];
+        }
+
+        unset($headers['host'], $headers['Host'], $headers['content-length'], $headers['Content-Length']);
+        $headers['X-Propagator-Origin'] = 'remote';
+
+        $body = (string) ($record['requestBody'] ?? '');
+        $query = $record['requestQueryParams'] ?? [];
+        if (! is_array($query)) {
+            $query = [];
+        }
+
+        Http::withHeaders($headers)->send($method, $targetUrl, [
+            'query' => $query,
+            'body' => $body,
+        ]);
     }
 
     private function lastReceivedAt(): Carbon
