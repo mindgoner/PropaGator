@@ -14,6 +14,8 @@ return [
         'secret' => env('PROPAGATOR_SECRET'),
     ],
 
+    'pull_path' => env('PROPAGATOR_PULL_PATH', '/propagator/pull'),
+
     // Timestamps are normalized to UTC internally regardless of app timezone.
     'timezone' => 'UTC',
 

@@ -20,6 +20,8 @@ class PropagatorServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadRoutesFrom(__DIR__ . '/../routes/propagator.php');
+
         $this->publishes([
             __DIR__ . '/../config/propagator.php' => config_path('propagator.php'),
         ], 'propagator-config');
