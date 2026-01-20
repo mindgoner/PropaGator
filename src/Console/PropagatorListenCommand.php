@@ -145,18 +145,24 @@ class PropagatorListenCommand extends Command
                 continue;
             }
 
+            $recordedAt = $record['requestReceivedAt'] ?? null;
+            if (! is_string($recordedAt) || $recordedAt === '') {
+                continue;
+            }
+
+            $parsedRecordedAt = Carbon::parse($recordedAt, 'UTC');
+            if ($parsedRecordedAt->lessThanOrEqualTo($latest)) {
+                continue;
+            }
+
             $request = $this->buildRequestFromRecord($record);
             $request->attributes->set('propagator_received_at', $record['requestReceivedAt'] ?? null);
             $request->attributes->set('propagator_request_id', $record['requestId'] ?? null);
 
             Propagator::record($request);
 
-            $recordedAt = $record['requestReceivedAt'] ?? null;
-            if (is_string($recordedAt) && $recordedAt !== '') {
-                $parsed = Carbon::parse($recordedAt, 'UTC');
-                if ($parsed->greaterThan($latest)) {
-                    $latest = $parsed;
-                }
+            if ($parsedRecordedAt->greaterThan($latest)) {
+                $latest = $parsedRecordedAt;
             }
         }
 
