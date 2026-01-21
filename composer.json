@@ -23,7 +23,9 @@
     "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
     "illuminate/console": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
     "illuminate/database": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
-    "illuminate/http": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
-    "pusher/pusher-websocket-php": "^3.0"
+    "illuminate/http": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0"
+  },
+  "suggest": {
+    "artisan-build/pusher-websocket-php": "Required for Pusher websocket listening in propagator:listen"
   }
 }
