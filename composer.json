@@ -1,0 +1,38 @@
+{
+  "name": "mindgoner/propagator",
+  "description": "",
+  "type": "library",
+  "license": "MIT",
+  "autoload": {
+    "psr-4": {
+      "Mindgoner\\Propagator\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Mindgoner\\Propagator\\PropagatorServiceProvider"
+      ],
+      "aliases": {
+        "Propagator": "Mindgoner\\Propagator\\Facades\\Propagator"
+      }
+    }
+  },
+  "require": {
+    "php": "^7.4 || ^8.0",
+    "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
+    "illuminate/console": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
+    "illuminate/database": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
+    "illuminate/http": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
+    "phpunit/phpunit": "^9.6"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Mindgoner\\Propagator\\Tests\\": "tests/"
+    }
+  }
+}
+}
